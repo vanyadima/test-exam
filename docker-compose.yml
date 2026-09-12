@@ -1,0 +1,7 @@
+services:
+  quiz:
+    build: .
+    container_name: ekspluataciya-is-trainer
+    restart: unless-stopped
+    ports:
+      - "8080:80"
