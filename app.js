@@ -60,7 +60,10 @@
     else if(state.route==="categories") renderCategories(app);
     else if(state.route==="exam") renderQuizOrStart(app,"exam");
     else if(state.route==="marathon") renderQuizOrStart(app,"marathon");
-    else if(state.route.startsWith("category/")) renderCategory(app, Number(state.route.split("/")[1]));
+    else if(state.route.startsWith("category/")) {
+      if(state.quiz) renderQuiz(app);
+      else renderCategory(app, Number(state.route.split("/")[1]));
+    }
     else renderHome(app);
     document.querySelectorAll(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.route===state.route.split("/")[0]));
   }
