@@ -1,4 +1,3 @@
-
 (() => {
   const questions = window.QUIZ_DATA || [];
   const blockNames = {
@@ -19,7 +18,6 @@
   };
   const blockOrder = Object.keys(blockNames).map(Number);
   const $ = (s, r=document) => r.querySelector(s);
-
   const state = {
     route: location.hash.replace("#","") || "home",
     quiz: null,
@@ -30,18 +28,24 @@
 
   function loadStats(){
     try {
-      return JSON.parse(localStorage.getItem("quiz-stats")) || {
+      return JSON.parse(sessionStorage.getItem("quiz-stats")) || {
         attempts:0, answers:0, correct:0, bestExam:0,
         categoryBest:{}, marathonBest:0
       };
     } catch { return {attempts:0,answers:0,correct:0,bestExam:0,categoryBest:{},marathonBest:0}; }
   }
-  function saveStats(){ localStorage.setItem("quiz-stats", JSON.stringify(state.stats)); }
+
+  function saveStats(){ sessionStorage.setItem("quiz-stats", JSON.stringify(state.stats)); }
+
   function shuffle(arr){
     const a = [...arr];
-    for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+    for(let i=a.length-1;i>0;i--){
+      const j=Math.floor(Math.random()*(i+1));
+      [a[i],a[j]]=[a[j],a[i]];
+    }
     return a;
   }
+
   function routeTo(route){
     state.route=route;
     location.hash=route;
@@ -49,9 +53,11 @@
     render();
     window.scrollTo({top:0,behavior:"smooth"});
   }
+
   function escapeHtml(s){
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   }
+
   function pct(correct,total){ return total ? Math.round(correct/total*100) : 0; }
 
   function render(){
@@ -81,13 +87,11 @@
           <button class="btn" data-start="marathon">Марафон 505</button>
         </div>
       </section>
-
       <section class="section grid grid-3">
         <div class="card stat"><div><span>Вопросов</span><b>505</b></div><span>полный банк</span></div>
         <div class="card stat"><div><span>Блоков</span><b>14</b></div><span>на экзамене 14</span></div>
         <div class="card stat"><div><span>Лучший экзамен</span><b>${best}/14</b></div><span>${best ? pct(best,14)+"%" : "пока нет"}</span></div>
       </section>
-
       <section class="section card">
         <div class="section-head"><h2>Как это работает</h2></div>
         <p class="tagline">Каждая попытка перемешивает порядок вопросов и порядок вариантов ответа. Нумерация вопроса остаётся исходной — например, <b>01.05</b>.</p>
@@ -96,7 +100,7 @@
           <div><b>Экзамен</b><div class="small muted">14 вопросов — по одному из каждого блока.</div></div>
           <div><b>Категория</b><div class="small muted">Все вопросы выбранного блока в случайном порядке.</div></div>
           <div><b>Марафон</b><div class="small muted">Все 505 вопросов без повторов в рамках одной попытки.</div></div>
-          <div><b>Прогресс</b><div class="small muted">Результаты и лучший балл сохраняются на устройстве.</div></div>
+          <div><b>Прогресс</b><div class="small muted">Результаты и лучший балл сохраняются только в этой вкладке.</div></div>
         </div>
       </section>
     `;
@@ -173,19 +177,26 @@
     renderQuiz(app);
   }
 
-  function startQuiz(mode, block){
+  function startQuiz(mode, block, mistakePool=null){
     let pool;
+
     if(mode==="exam"){
       pool=shuffle(blockOrder.map(b=>shuffle(questions.filter(q=>q.block===b))[0]));
     } else if(mode==="category"){
       pool=shuffle(questions.filter(q=>q.block===block));
+    } else if(mode==="mistakes"){
+      pool=shuffle(mistakePool || []);
     } else {
       pool=shuffle(questions);
     }
+
     state.quiz={
       mode, block, pool, index:0, score:0, answered:false, started:Date.now(),
-      options: null
+      options: null,
+      mistakes: [],
+      sourceMistakes: mode==="mistakes" ? pool : null
     };
+
     render();
     window.scrollTo({top:0,behavior:"smooth"});
   }
@@ -194,8 +205,10 @@
     const q=state.quiz.pool[state.quiz.index];
     const total=state.quiz.pool.length;
     if(!q){ return renderResult(app); }
+
     if(!state.quiz.options) state.quiz.options=shuffle(q.answers.map((a,i)=>({...a,original:i})));
     const done=state.quiz.index;
+
     app.innerHTML=`
       <div class="quiz-shell">
         <div class="quiz-top">
@@ -218,6 +231,7 @@
         </article>
       </div>
     `;
+
     document.querySelectorAll("[data-option]").forEach(b=>b.onclick=()=>answerQuestion(Number(b.dataset.option)));
     $("#nextBtn").onclick=nextQuestion;
     $("#quitBtn").onclick=()=>{state.quiz=null;routeTo("home");};
@@ -226,18 +240,24 @@
   function answerQuestion(index){
     if(state.quiz.answered) return;
     state.quiz.answered=true;
+
     const q=state.quiz.pool[state.quiz.index];
     const options=state.quiz.options;
     const picked=options[index];
     const correctIndex=options.findIndex(a=>a.correct);
     const good=picked.correct;
+
     if(good) state.quiz.score++;
+    else if(state.quiz.mode!=="mistakes") state.quiz.mistakes.push(q);
+
     state.quiz.selected=index;
+
     document.querySelectorAll(".option").forEach((b,i)=>{
       b.classList.add("disabled");
       if(options[i].correct) b.classList.add("correct");
       if(i===index && !good) b.classList.add("wrong");
     });
+
     const fb=$("#feedback");
     fb.className="feedback "+(good?"good":"bad");
     fb.innerHTML=good ? "<b>Верно.</b> Переходи дальше." : `<b>Неверно.</b> Правильный вариант: ${escapeHtml(options[correctIndex].text)}`;
@@ -256,16 +276,22 @@
 
   function finishQuiz(){
     const q=state.quiz;
-    state.stats.attempts++;
-    state.stats.answers+=q.pool.length;
-    state.stats.correct+=q.score;
-    if(q.mode==="exam") state.stats.bestExam=Math.max(state.stats.bestExam,q.score);
-    if(q.mode==="marathon") state.stats.marathonBest=Math.max(state.stats.marathonBest,q.score);
-    if(q.mode==="category"){
-      const b=q.block;
-      state.stats.categoryBest[b]=Math.max(state.stats.categoryBest[b]||0,q.score);
+
+    if(q.mode!=="mistakes"){
+      state.stats.attempts++;
+      state.stats.answers+=q.pool.length;
+      state.stats.correct+=q.score;
+
+      if(q.mode==="exam") state.stats.bestExam=Math.max(state.stats.bestExam,q.score);
+      if(q.mode==="marathon") state.stats.marathonBest=Math.max(state.stats.marathonBest,q.score);
+      if(q.mode==="category"){
+        const b=q.block;
+        state.stats.categoryBest[b]=Math.max(state.stats.categoryBest[b]||0,q.score);
+      }
+
+      saveStats();
     }
-    saveStats();
+
     q.finished=true;
     render();
   }
@@ -274,8 +300,23 @@
     const q=state.quiz;
     const total=q.pool.length;
     const percent=pct(q.score,total);
-    const title=q.mode==="exam"?"Экзамен завершён":q.mode==="marathon"?"Марафон завершён":"Тренировка завершена";
-    let verdict = percent>=90 ? "Отличный результат." : percent>=70 ? "Хороший результат — есть что повторить." : "Есть смысл ещё раз пройти вопросы.";
+
+    let title;
+    let verdict;
+
+    if(q.mode==="mistakes"){
+      title="Работа над ошибками завершена";
+      verdict = q.score===total ? "Все ошибки исправлены." : "Некоторые вопросы ещё стоит повторить.";
+    } else {
+      title=q.mode==="exam"?"Экзамен завершён":q.mode==="marathon"?"Марафон завершён":"Тренировка завершена";
+      verdict = percent>=90 ? "Отличный результат." : percent>=70 ? "Хороший результат — есть что повторить." : "Есть смысл ещё раз пройти вопросы.";
+    }
+
+    const mistakesCount = Array.isArray(q.mistakes) ? q.mistakes.length : 0;
+    const workOnMistakesBtn = q.mode!=="mistakes"
+      ? `<button class="btn primary" id="mistakesBtn" ${mistakesCount===0?"disabled":""}>Работа над ошибками <span class="result-action-count">${mistakesCount}</span></button>`
+      : "";
+
     app.innerHTML=`
       <section class="card quiz-shell result">
         <div class="eyebrow">${title}</div>
@@ -287,15 +328,25 @@
           <div class="card"><div class="kpi">${total-q.score}</div><div class="small muted">ошибок</div></div>
           <div class="card"><div class="kpi">${total}</div><div class="small muted">всего</div></div>
         </div>
-        <div class="actions" style="justify-content:center;margin-top:16px">
+        <div class="actions result-actions">
+          ${workOnMistakesBtn}
           <button class="btn primary" id="againBtn">Пройти ещё раз</button>
           <button class="btn" data-route="home">На главную</button>
         </div>
       </section>
     `;
+
     $("#againBtn").onclick=()=>{
-      if(q.mode==="category") startQuiz("category",q.block); else startQuiz(q.mode);
+      if(q.mode==="category") startQuiz("category",q.block);
+      else if(q.mode==="mistakes") startQuiz("mistakes",null,q.sourceMistakes || q.pool);
+      else startQuiz(q.mode);
     };
+
+    const mistakesBtn=$("#mistakesBtn");
+    if(mistakesBtn){
+      mistakesBtn.onclick=()=>startQuiz("mistakes",null,q.mistakes);
+    }
+
     $("[data-route]").onclick=()=>routeTo("home");
   }
 
@@ -305,6 +356,7 @@
     localStorage.setItem("quiz-theme",state.theme);
     $("#themeBtn").textContent=state.theme==="dark"?"☾":"☀";
   };
+
   window.addEventListener("hashchange",()=>{ state.route=location.hash.replace("#","")||"home"; state.quiz=null; render(); });
   render();
 })();

@@ -98,6 +98,8 @@ h3 { font-size:17px; margin-bottom:6px; }
 .result { text-align:center; padding:22px 12px; }
 .score-ring { width:128px; height:128px; margin:0 auto 16px; border-radius:50%; border:10px solid var(--surface-3); display:grid; place-items:center; background:var(--surface); }
 .score-ring b { font-size:28px; }
+.result-actions { justify-content:center; margin-top:16px; }
+.result-action-count { display:inline-flex; min-width:20px; height:20px; align-items:center; justify-content:center; margin-left:4px; padding:0 6px; border-radius:999px; background:rgba(255,255,255,.18); font-size:11px; }
 .muted { color:var(--muted); }
 .small { font-size:12px; }
 .kpi { font-size:32px; font-weight:900; }
@@ -109,3 +111,5 @@ h3 { font-size:17px; margin-bottom:6px; }
 .empty { text-align:center; padding:28px 12px; color:var(--muted); }
 hr.sep { border:0; border-top:1px solid var(--border); margin:18px 0; }
 .tagline { color:var(--muted); font-size:13px; }
+
+.btn:disabled { opacity:.5; cursor:not-allowed; }
