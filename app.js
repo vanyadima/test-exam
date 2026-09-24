@@ -22,7 +22,8 @@
     route: location.hash.replace("#","") || "home",
     quiz: null,
     stats: loadStats(),
-    theme: localStorage.getItem("quiz-theme") || "dark"
+    theme: localStorage.getItem("quiz-theme") || "dark",
+    hints: localStorage.getItem("quiz-hints") === "1"
   };
   document.documentElement.classList.toggle("light", state.theme === "light");
 
@@ -71,6 +72,7 @@
       else renderCategory(app, Number(state.route.split("/")[1]));
     }
     else renderHome(app);
+    bindCommonControls();
     document.querySelectorAll(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.route===state.route.split("/")[0]));
   }
 
@@ -81,6 +83,7 @@
         <div class="eyebrow">505 вопросов · 14 блоков</div>
         <h1>Готовься.<br>Отвечай. Сдавай.</h1>
         <p class="lead">Мобильный тренажёр по курсу «Эксплуатация информационных систем». В экзамене — ровно один случайный вопрос из каждого блока.</p>
+        ${renderHintsControl()}
         <div class="actions">
           <button class="btn primary" data-start="exam">Начать экзамен</button>
           <button class="btn" data-route="categories">Тренироваться по категориям</button>
@@ -104,12 +107,23 @@
         </div>
       </section>
     `;
-    bindHome();
   }
 
-  function bindHome(){
+  function renderHintsControl(){
+    return `<label class="check-row" title="При ошибке вариант останется доступным, пока не будет выбран правильный ответ">
+      <input type="checkbox" id="hintsToggle" ${state.hints ? "checked" : ""}>
+      <span>С подсказками</span>
+    </label>`;
+  }
+
+  function bindCommonControls(){
     document.querySelectorAll("[data-route]").forEach(b=>b.onclick=()=>routeTo(b.dataset.route));
+    document.querySelectorAll('[data-action="home"]').forEach(b=>b.onclick=()=>routeTo("home"));
     document.querySelectorAll("[data-start]").forEach(b=>b.onclick=()=>startQuiz(b.dataset.start));
+    document.querySelectorAll("#hintsToggle").forEach(t=>t.onchange=e=>{
+      state.hints=e.target.checked;
+      localStorage.setItem("quiz-hints", state.hints ? "1" : "0");
+    });
   }
 
   function renderCategories(app){
@@ -146,6 +160,7 @@
       </div>
       <div class="hero">
         <p class="lead">Вопросы и варианты ответа будут перемешаны при каждой новой попытке.</p>
+        ${renderHintsControl()}
         <div class="actions"><button class="btn primary" data-start-cat="${block}">Начать тренировку</button></div>
       </div>
       <section class="section grid">
@@ -167,11 +182,10 @@
           <div class="eyebrow">${mode==="exam"?"Экзаменационный режим":"Полный банк"}</div>
           <h1>${title}</h1>
           <p class="lead">${text}</p>
+          ${renderHintsControl()}
           <div class="actions"><button class="btn primary" data-start="${mode}">Начать</button><button class="btn" data-route="home">Назад</button></div>
         </section>
       `;
-      document.querySelectorAll("[data-start]").forEach(b=>b.onclick=()=>startQuiz(b.dataset.start));
-      $("[data-route]").onclick=()=>routeTo("home");
       return;
     }
     renderQuiz(app);
@@ -194,7 +208,8 @@
       mode, block, pool, index:0, score:0, answered:false, started:Date.now(),
       options: null,
       mistakes: [],
-      sourceMistakes: mode==="mistakes" ? pool : null
+      sourceMistakes: mode==="mistakes" ? pool : null,
+      hints: state.hints
     };
 
     render();
@@ -226,7 +241,7 @@
               </button>
             `).join("")}
           </div>
-          <div id="feedback"></div>
+          <div id="feedback" aria-live="polite"></div>
           <div class="quiz-actions"><button class="btn ghost" id="quitBtn">Выйти</button><button class="btn primary" id="nextBtn" disabled>${done+1===total?"Завершить":"Далее"}</button></div>
         </article>
       </div>
@@ -239,28 +254,42 @@
 
   function answerQuestion(index){
     if(state.quiz.answered) return;
-    state.quiz.answered=true;
 
     const q=state.quiz.pool[state.quiz.index];
     const options=state.quiz.options;
     const picked=options[index];
     const correctIndex=options.findIndex(a=>a.correct);
     const good=picked.correct;
+    const buttons=document.querySelectorAll(".option");
+    const fb=$("#feedback");
 
+    if(!good && !state.quiz.mistakes.some(m=>m.id===q.id)){
+      state.quiz.mistakes.push(q);
+    }
+
+    if(!good && state.quiz.hints){
+      buttons[index].classList.add("wrong");
+      fb.className="feedback bad";
+      fb.innerHTML="<b>Неверно.</b> Попробуй ещё раз.";
+      $("#nextBtn").disabled=true;
+      return;
+    }
+
+    state.quiz.answered=true;
     if(good) state.quiz.score++;
-    else if(state.quiz.mode!=="mistakes") state.quiz.mistakes.push(q);
-
     state.quiz.selected=index;
 
-    document.querySelectorAll(".option").forEach((b,i)=>{
+    buttons.forEach((b,i)=>{
       b.classList.add("disabled");
+      b.disabled=true;
       if(options[i].correct) b.classList.add("correct");
       if(i===index && !good) b.classList.add("wrong");
     });
 
-    const fb=$("#feedback");
     fb.className="feedback "+(good?"good":"bad");
-    fb.innerHTML=good ? "<b>Верно.</b> Переходи дальше." : `<b>Неверно.</b> Правильный вариант: ${escapeHtml(options[correctIndex].text)}`;
+    fb.innerHTML=good
+      ? "<b>Верно.</b> Переходи дальше."
+      : `<b>Неверно.</b> Правильный вариант: ${escapeHtml(options[correctIndex].text)}`;
     $("#nextBtn").disabled=false;
   }
 
@@ -347,7 +376,6 @@
       mistakesBtn.onclick=()=>startQuiz("mistakes",null,q.mistakes);
     }
 
-    $("[data-route]").onclick=()=>routeTo("home");
   }
 
   $("#themeBtn").onclick=()=>{
@@ -356,6 +384,7 @@
     localStorage.setItem("quiz-theme",state.theme);
     $("#themeBtn").textContent=state.theme==="dark"?"☾":"☀";
   };
+  $("#themeBtn").textContent=state.theme==="dark"?"☾":"☀";
 
   window.addEventListener("hashchange",()=>{ state.route=location.hash.replace("#","")||"home"; state.quiz=null; render(); });
   render();
