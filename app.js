@@ -23,7 +23,8 @@
     quiz: null,
     stats: loadStats(),
     theme: localStorage.getItem("quiz-theme") || "dark",
-    hints: localStorage.getItem("quiz-hints") === "1"
+    hints: localStorage.getItem("quiz-hints") === "1",
+    sequential: localStorage.getItem("quiz-sequential") === "1"
   };
   document.documentElement.classList.toggle("light", state.theme === "light");
 
@@ -116,6 +117,13 @@
     </label>`;
   }
 
+  function renderSequentialControl(){
+    return `<label class="check-row" title="Вопросы идут в исходном порядке внутри категорий; в марафоне — от блока 01 к 14">
+      <input type="checkbox" id="sequentialToggle" ${state.sequential ? "checked" : ""}>
+      <span>Вопросы по порядку</span>
+    </label>`;
+  }
+
   function bindCommonControls(){
     document.querySelectorAll("[data-route]").forEach(b=>b.onclick=()=>routeTo(b.dataset.route));
     document.querySelectorAll('[data-action="home"]').forEach(b=>b.onclick=()=>routeTo("home"));
@@ -124,12 +132,18 @@
       state.hints=e.target.checked;
       localStorage.setItem("quiz-hints", state.hints ? "1" : "0");
     });
+    document.querySelectorAll("#sequentialToggle").forEach(t=>t.onchange=e=>{
+      state.sequential=e.target.checked;
+      localStorage.setItem("quiz-sequential", state.sequential ? "1" : "0");
+      render();
+    });
   }
 
   function renderCategories(app){
     const counts = Object.fromEntries(blockOrder.map(b=>[b,questions.filter(q=>q.block===b).length]));
     app.innerHTML = `
       <div class="section-head"><div><div class="eyebrow">Тренажёр</div><h2>Выбери блок</h2></div><span>${questions.length} вопросов</span></div>
+      ${renderSequentialControl()}
       <input class="search" id="catSearch" placeholder="Поиск по названию блока…" autocomplete="off">
       <div class="section grid" id="catList">
         ${blockOrder.map(b=>`
@@ -159,7 +173,8 @@
         <span>${list.length} вопросов</span>
       </div>
       <div class="hero">
-        <p class="lead">Вопросы и варианты ответа будут перемешаны при каждой новой попытке.</p>
+        <p class="lead">${state.sequential ? "Вопросы идут в исходном порядке." : "Вопросы перемешиваются при каждой новой попытке."} Варианты ответа перемешиваются.</p>
+        ${renderSequentialControl()}
         ${renderHintsControl()}
         <div class="actions"><button class="btn primary" data-start-cat="${block}">Начать тренировку</button></div>
       </div>
@@ -176,12 +191,15 @@
       const title = mode==="exam" ? "Экзамен · 14 вопросов" : "Марафон · 505 вопросов";
       const text = mode==="exam"
         ? "По одному случайному вопросу из каждого из 14 блоков. Порядок блоков и ответов — случайный."
-        : "Все 505 вопросов без повторов в одной попытке. Можно проходить частями — прогресс не сбрасывается при обновлении страницы во время попытки.";
+        : (state.sequential
+          ? "Все 505 вопросов без повторов: внутри каждого блока вопросы идут по порядку, блоки 01 → 14."
+          : "Все 505 вопросов без повторов в одной попытке. Порядок вопросов случайный.");
       app.innerHTML=`
         <section class="hero quiz-shell">
           <div class="eyebrow">${mode==="exam"?"Экзаменационный режим":"Полный банк"}</div>
           <h1>${title}</h1>
           <p class="lead">${text}</p>
+          ${mode!=="exam" ? renderSequentialControl() : ""}
           ${renderHintsControl()}
           <div class="actions"><button class="btn primary" data-start="${mode}">Начать</button><button class="btn" data-route="home">Назад</button></div>
         </section>
@@ -197,15 +215,21 @@
     if(mode==="exam"){
       pool=shuffle(blockOrder.map(b=>shuffle(questions.filter(q=>q.block===b))[0]));
     } else if(mode==="category"){
-      pool=shuffle(questions.filter(q=>q.block===block));
+      const categoryPool = questions.filter(q=>q.block===block);
+      pool = state.sequential
+        ? [...categoryPool].sort((a,b)=>(a.number??0)-(b.number??0) || String(a.id).localeCompare(String(b.id), "ru", {numeric:true}))
+        : shuffle(categoryPool);
     } else if(mode==="mistakes"){
       pool=shuffle(mistakePool || []);
     } else {
-      pool=shuffle(questions);
+      pool = state.sequential
+        ? blockOrder.flatMap(b => questions.filter(q => q.block === b).sort((a,c)=>(a.number??0)-(c.number??0) || String(a.id).localeCompare(String(c.id), "ru", {numeric:true})))
+        : shuffle(questions);
     }
 
     state.quiz={
       mode, block, pool, index:0, score:0, answered:false, started:Date.now(),
+      sequential: mode!=="exam" && mode!=="mistakes" ? state.sequential : false,
       options: null,
       mistakes: [],
       sourceMistakes: mode==="mistakes" ? pool : null,
@@ -227,7 +251,12 @@
     app.innerHTML=`
       <div class="quiz-shell">
         <div class="quiz-top">
-          <div><span class="question-id">${q.id}</span><div class="small muted">${escapeHtml(blockNames[q.block])}</div></div>
+          ${state.quiz.mode!=="exam" ? `
+            <div>
+              <span class="question-id">${q.id}</span>
+              <div class="small muted">${escapeHtml(blockNames[q.block])}</div>
+            </div>
+          ` : ""}
           <div class="pill">${done+1} / ${total}</div>
         </div>
         <div class="progress"><i style="width:${((done)/total)*100}%"></i></div>
