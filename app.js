@@ -271,13 +271,14 @@
             `).join("")}
           </div>
           <div id="feedback" aria-live="polite"></div>
-          <div class="quiz-actions"><button class="btn ghost" id="quitBtn">Выйти</button><button class="btn primary" id="nextBtn" disabled>${done+1===total?"Завершить":"Далее"}</button></div>
+          <div class="quiz-actions"><button class="btn ghost" id="restartBtn">Начать сначала</button><button class="btn ghost" id="quitBtn">Выйти</button><button class="btn primary" id="nextBtn" disabled>${done+1===total?"Завершить":"Далее"}</button></div>
         </article>
       </div>
     `;
 
     document.querySelectorAll("[data-option]").forEach(b=>b.onclick=()=>answerQuestion(Number(b.dataset.option)));
     $("#nextBtn").onclick=nextQuestion;
+    $("#restartBtn").onclick=restartQuiz;
     $("#quitBtn").onclick=()=>{state.quiz=null;routeTo("home");};
   }
 
@@ -320,6 +321,15 @@
       ? "<b>Верно.</b> Переходи дальше."
       : `<b>Неверно.</b> Правильный вариант: ${escapeHtml(options[correctIndex].text)}`;
     $("#nextBtn").disabled=false;
+  }
+
+  function restartQuiz(){
+    const q=state.quiz;
+    if(!q) return;
+
+    if(q.mode==="category") startQuiz("category",q.block);
+    else if(q.mode==="mistakes") startQuiz("mistakes",null,q.sourceMistakes || q.pool);
+    else startQuiz(q.mode);
   }
 
   function nextQuestion(){
