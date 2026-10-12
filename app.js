@@ -24,7 +24,8 @@
     stats: loadStats(),
     theme: localStorage.getItem("quiz-theme") || "dark",
     hints: localStorage.getItem("quiz-hints") === "1",
-    sequential: localStorage.getItem("quiz-sequential") === "1"
+    sequential: localStorage.getItem("quiz-sequential") === "1",
+    examSimulation: localStorage.getItem("quiz-exam-simulation") === "1"
   };
   document.documentElement.classList.toggle("light", state.theme === "light");
 
@@ -117,6 +118,13 @@
     </label>`;
   }
 
+  function renderExamSimulationControl(){
+    return `<label class="check-row" title="Можно переходить между вопросами; результат и разбор ошибок появятся только в конце">
+      <input type="checkbox" id="examSimulationToggle" ${state.examSimulation ? "checked" : ""}>
+      <span>Симуляция экзамена</span>
+    </label>`;
+  }
+
   function renderSequentialControl(){
     return `<label class="check-row" title="Вопросы идут в исходном порядке внутри категорий; в марафоне — от блока 01 к 14">
       <input type="checkbox" id="sequentialToggle" ${state.sequential ? "checked" : ""}>
@@ -131,6 +139,10 @@
     document.querySelectorAll("#hintsToggle").forEach(t=>t.onchange=e=>{
       state.hints=e.target.checked;
       localStorage.setItem("quiz-hints", state.hints ? "1" : "0");
+    });
+    document.querySelectorAll("#examSimulationToggle").forEach(t=>t.onchange=e=>{
+      state.examSimulation=e.target.checked;
+      localStorage.setItem("quiz-exam-simulation", state.examSimulation ? "1" : "0");
     });
     document.querySelectorAll("#sequentialToggle").forEach(t=>t.onchange=e=>{
       state.sequential=e.target.checked;
@@ -199,8 +211,9 @@
           <div class="eyebrow">${mode==="exam"?"Экзаменационный режим":"Полный банк"}</div>
           <h1>${title}</h1>
           <p class="lead">${text}</p>
-          ${mode!=="exam" ? renderSequentialControl() : ""}
-          ${renderHintsControl()}
+          ${mode==="exam" ? renderExamSimulationControl() : renderSequentialControl()}
+          ${mode==="exam" && state.examSimulation ? '<p class="small muted">Ответы не проверяются до конца. Можно пропускать вопросы и возвращаться к ним.</p>' : ""}
+          ${mode!=="exam" ? renderHintsControl() : ""}
           <div class="actions"><button class="btn primary" data-start="${mode}">Начать</button><button class="btn" data-route="home">Назад</button></div>
         </section>
       `;
@@ -233,7 +246,10 @@
       options: null,
       mistakes: [],
       sourceMistakes: mode==="mistakes" ? pool : null,
-      hints: state.hints
+      hints: state.hints,
+      examSimulation: mode==="exam" && state.examSimulation,
+      responses: {},
+      optionsByIndex: {}
     };
 
     render();
@@ -241,6 +257,7 @@
   }
 
   function renderQuiz(app){
+    if(state.quiz.examSimulation) return renderSimulationQuestion(app);
     const q=state.quiz.pool[state.quiz.index];
     const total=state.quiz.pool.length;
     if(!q){ return renderResult(app); }
@@ -280,6 +297,68 @@
     $("#nextBtn").onclick=nextQuestion;
     $("#restartBtn").onclick=restartQuiz;
     $("#quitBtn").onclick=()=>{state.quiz=null;routeTo("home");};
+  }
+
+  function renderSimulationQuestion(app){
+    const quiz=state.quiz;
+    const q=quiz.pool[quiz.index];
+    const total=quiz.pool.length;
+    if(!q) return finishQuiz();
+    if(!quiz.optionsByIndex[quiz.index]){
+      quiz.optionsByIndex[quiz.index]=shuffle(q.answers.map((a,i)=>({...a,original:i})));
+    }
+    quiz.options=quiz.optionsByIndex[quiz.index];
+    const selected=quiz.responses[q.id];
+    const answeredCount=Object.keys(quiz.responses).length;
+    app.innerHTML=`
+      <div class="quiz-shell">
+        <div class="quiz-top">
+          <div><span class="question-id">${q.id}</span><div class="small muted">${escapeHtml(blockNames[q.block])}</div></div>
+          <div class="pill">${quiz.index+1} / ${total}</div>
+        </div>
+        <div class="progress"><i style="width:${answeredCount/total*100}%"></i></div>
+        <div class="card" style="padding:14px;margin-bottom:14px">
+          <div class="small muted">Отвечено: ${answeredCount} из ${total}. Проверка будет только после завершения.</div>
+          <div class="question-grid">
+            ${quiz.pool.map((item,i)=>`<button class="question-jump ${i===quiz.index?'current':''} ${quiz.responses[item.id]?'answered':''}" data-jump="${i}" aria-label="Вопрос ${i+1}">${i+1}</button>`).join("")}
+          </div>
+        </div>
+        <article class="question-card">
+          <div class="question-text">${escapeHtml(q.question)}</div>
+          <div class="option-list">
+            ${quiz.options.map((a,i)=>`
+              <button class="option ${selected && selected.original===a.original?'selected':''}" data-sim-option="${i}">
+                <span class="option-letter">${String.fromCharCode(65+i)}</span>
+                <span class="option-text">${escapeHtml(a.text)}</span>
+              </button>
+            `).join("")}
+          </div>
+          <div class="quiz-actions simulation-actions">
+            <button class="btn" id="prevQuestion" ${quiz.index===0?'disabled':''}>Назад</button>
+            <button class="btn" id="skipQuestion" ${quiz.index===total-1?'disabled':''}>Далее</button>
+            <button class="btn primary" id="finishSimulation">${quiz.index===total-1?'Завершить экзамен':'Завершить досрочно'}</button>
+          </div>
+        </article>
+      </div>
+    `;
+    document.querySelectorAll("[data-sim-option]").forEach(b=>b.onclick=()=>{
+      quiz.responses[q.id]=quiz.options[Number(b.dataset.simOption)];
+      render();
+    });
+    document.querySelectorAll("[data-jump]").forEach(b=>b.onclick=()=>{
+      quiz.index=Number(b.dataset.jump);
+      render();
+      window.scrollTo({top:0,behavior:"smooth"});
+    });
+    $("#prevQuestion").onclick=()=>{quiz.index--;render();window.scrollTo({top:0,behavior:"smooth"});};
+    $("#skipQuestion").onclick=()=>{quiz.index++;render();window.scrollTo({top:0,behavior:"smooth"});};
+    $("#finishSimulation").onclick=()=>{
+      const unanswered=total-Object.keys(quiz.responses).length;
+      if(unanswered>0 && !confirm(`Осталось без ответа: ${unanswered}. Завершить экзамен?`)) return;
+      quiz.score=quiz.pool.reduce((sum,item)=>sum+(quiz.responses[item.id]?.correct?1:0),0);
+      quiz.mistakes=quiz.pool.filter(item=>!quiz.responses[item.id]?.correct);
+      finishQuiz();
+    };
   }
 
   function answerQuestion(index){
@@ -385,6 +464,21 @@
       ? `<button class="btn primary" id="mistakesBtn" ${mistakesCount===0?"disabled":""}>Работа над ошибками <span class="result-action-count">${mistakesCount}</span></button>`
       : "";
 
+    const examReview = q.examSimulation ? `
+      <section class="section card review-list">
+        <div class="section-head"><h2>Разбор ответов</h2><span>${q.mistakes.length} ошибок</span></div>
+        ${q.pool.map((item,i)=>{
+          const chosen=q.responses[item.id];
+          const right=item.answers.find(a=>a.correct);
+          return `<article class="review-item">
+            <div class="review-heading"><span class="question-id">${escapeHtml(item.id)}</span><b>Вопрос ${i+1}</b><span class="pill ${chosen?.correct?'review-good':'review-bad'}">${chosen?.correct?'Верно':chosen?'Ошибка':'Нет ответа'}</span></div>
+            <p>${escapeHtml(item.question)}</p>
+            <div class="small ${chosen?.correct?'review-good':'review-bad'}">Ваш ответ: ${chosen?escapeHtml(chosen.text):'Не отвечено'}</div>
+            ${!chosen?.correct?`<div class="small review-good">Правильный ответ: ${escapeHtml(right?.text || 'не указан')}</div>`:''}
+          </article>`;
+        }).join("")}
+      </section>` : "";
+
     app.innerHTML=`
       <section class="card quiz-shell result">
         <div class="eyebrow">${title}</div>
@@ -402,6 +496,7 @@
           <button class="btn" data-route="home">На главную</button>
         </div>
       </section>
+      ${examReview}
     `;
 
     $("#againBtn").onclick=()=>{
